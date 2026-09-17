@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; media-src blob: mediastream:; connect-src 'none'; form-action 'none'">
+<title>タイムシフトカメラ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#1D3557;
+  --wait:#F4A300;
+  --play:#2A9D8F;
+  --bg:#EEF3F7;
+  --line:#C9D6E2;
+  --ink:#16243A;
+  --phase:var(--navy);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overscroll-behavior:none}
+body{
+  font-family:"Zen Maru Gothic","BIZ UDPGothic","Hiragino Maru Gothic ProN",sans-serif;
+  background:var(--bg);color:var(--ink);
+  min-height:100vh;min-height:100dvh;
+  -webkit-user-select:none;user-select:none;
+  -webkit-tap-highlight-color:transparent;
+}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:4px solid #4A90E2;outline-offset:3px}
+[hidden]{display:none!important}
+
+/* ---------- 設定画面 ---------- */
+#setup{min-height:100vh;min-height:100dvh;display:flex;justify-content:center;padding:max(24px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom))}
+.setup-inner{width:100%;max-width:560px;display:flex;flex-direction:column;gap:14px}
+h1{font-size:clamp(26px,6vw,34px);font-weight:900;color:var(--navy);display:flex;align-items:center;gap:12px;line-height:1.3}
+h1 svg{flex:none;width:1.4em;height:1.4em}
+.lead{font-size:16px;line-height:1.7;color:#44546B;margin-bottom:6px}
+.row{background:#fff;border:2px solid var(--line);border-radius:18px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.label{font-size:19px;font-weight:700}
+.label small{display:block;font-size:13px;font-weight:500;color:#5A6A80;margin-top:2px}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper button{width:52px;height:52px;border-radius:50%;background:var(--navy);color:#fff;font-size:30px;font-weight:700;line-height:1;display:grid;place-items:center}
+.stepper button:disabled{background:#B7C3D0;cursor:default}
+.stepper output{min-width:92px;text-align:center;font-size:36px;font-weight:900;font-variant-numeric:tabular-nums}
+.stepper output small{font-size:17px;font-weight:700;margin-left:2px}
+.seg{display:flex;background:var(--bg);border-radius:14px;padding:4px;gap:4px}
+.seg button{min-height:48px;padding:0 16px;border-radius:11px;font-size:17px;font-weight:700;color:#44546B}
+.seg button[aria-pressed="true"]{background:var(--navy);color:#fff}
+.privacy{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.6;color:#2B4A3F;background:#E3F3EF;border-radius:14px;padding:12px 14px}
+.privacy svg{flex:none;width:22px;height:22px;margin-top:2px}
+.primary{margin-top:6px;min-height:68px;border-radius:20px;background:var(--play);color:#fff;font-size:24px;font-weight:900;box-shadow:0 5px 0 #1E7268}
+.primary:active{transform:translateY(3px);box-shadow:0 2px 0 #1E7268}
+
+/* ---------- 映像画面 ---------- */
+#stage{
+  position:fixed;inset:0;background:var(--phase);
+  display:grid;grid-template-rows:auto 1fr auto;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  transition:background-color .25s;
+}
+#stage[data-phase="buffering"]{--phase:var(--wait)}
+#stage[data-phase="shift"]{--phase:var(--play)}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px clamp(14px,3vw,28px);color:#fff;min-height:clamp(64px,13vmin,120px)}
+#phaseLabel{font-size:clamp(24px,6vmin,52px);font-weight:900;display:flex;align-items:center;gap:.35em;line-height:1.5}
+#phaseLabel rt{font-size:.36em;font-weight:700}
+.dot{display:none;width:.6em;height:.6em;border-radius:50%;background:#fff}
+[data-phase="shift"] .dot{display:inline-block}
+#count{font-size:clamp(52px,12vmin,110px);font-weight:900;font-variant-numeric:tabular-nums;line-height:1}
+.view{position:relative;margin:0 10px;border-radius:14px;overflow:hidden;background:#000;min-height:0}
+.view video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+.player{visibility:hidden}
+[data-phase="shift"] #live{visibility:hidden}
+[data-phase="shift"] .player.show{visibility:visible}
+.mirror video{transform:scaleX(-1)}
+.progress{position:absolute;left:0;right:0;bottom:0;height:10px;background:rgba(255,255,255,.18)}
+.progress i{display:block;height:100%;width:0;background:var(--phase)}
+.msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(88%,520px);background:#fff;color:var(--ink);border-radius:16px;padding:18px 20px;font-size:18px;font-weight:700;line-height:1.6;text-align:center}
+.controls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px clamp(14px,3vw,28px)}
+#back{min-height:56px;padding:0 20px;border-radius:16px;background:rgba(255,255,255,.2);color:#fff;font-size:18px;font-weight:700;display:flex;align-items:center;gap:6px}
+#back svg{width:22px;height:22px}
+#startStop{min-width:min(52vw,300px);min-height:clamp(64px,11vmin,96px);border-radius:999px;background:#fff;color:var(--ink);font-size:clamp(24px,5vmin,40px);font-weight:900;display:flex;align-items:center;justify-content:center;gap:.4em;box-shadow:0 5px 0 rgba(0,0,0,.25)}
+#startStop:active{transform:translateY(3px);box-shadow:0 2px 0 rgba(0,0,0,.25)}
+#startStop .ic{width:.8em;height:.8em;border-radius:50%;background:var(--play)}
+#startStop.running .ic{border-radius:4px;background:var(--ink)}
+@media (prefers-reduced-motion:reduce){ #stage{transition:none} }
+</style>
+</head>
+<body>
+
+<main id="setup">
+  <div class="setup-inner">
+    <h1>
+      <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="3" y="12" width="30" height="24" rx="5" fill="#1D3557"/><path d="M33 21l12-7v20l-12-7z" fill="#1D3557"/><circle cx="18" cy="24" r="7" fill="#fff"/><path d="M18 20v4.5l3 2" fill="none" stroke="#2A9D8F" stroke-width="2.4" stroke-linecap="round"/></svg>
+      タイムシフトカメラ
+    </h1>
+    <p class="lead">カメラの映像を、決めた秒数だけおくらせて流し続けます。自分の動きを、少しあとから大きな画面で見られます。</p>
+
+    <div class="row">
+      <span class="label">さかのぼる時間<small>何秒まえの映像を流すか</small></span>
+      <div class="stepper" data-key="delay">
+        <button type="button" class="minus" aria-label="さかのぼる時間を1秒へらす">−</button>
+        <output aria-live="polite"><span class="v">5</span><small>秒</small></output>
+        <button type="button" class="plus" aria-label="さかのぼる時間を1秒ふやす">+</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <span class="label">カメラ</span>
+      <div class="seg" data-key="facing" role="group" aria-label="カメラ">
+        <button type="button" data-v="environment" aria-pressed="true">外側</button>
+        <button type="button" data-v="user" aria-pressed="false">画面側</button>
+      </div>
+    </div>
+
+    <p class="privacy">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="12" rx="3" fill="#2A9D8F"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="#2A9D8F" stroke-width="2.4"/><circle cx="12" cy="16" r="1.8" fill="#fff"/></svg>
+      <span>映像は端末にも外部にも保存・送信されません。流し終わった映像はすぐに消去されます。音声は録音しません。</span>
+    </p>
+
+    <button type="button" id="done" class="primary">設定終了</button>
+  </div>
+</main>
+
+<section id="stage" data-phase="idle" hidden>
+  <div class="bar">
+    <span id="phaseLabel"><span class="dot"></span><span id="phaseText">スタートをおしてね</span></span>
+    <span id="count" aria-live="off"></span>
+  </div>
+  <div class="view" id="view">
+    <video id="live" playsinline muted autoplay></video>
+    <video id="p0" class="player" playsinline muted preload="auto"></video>
+    <video id="p1" class="player" playsinline muted preload="auto"></video>
+    <div class="progress"><i id="prog"></i></div>
+    <div class="msg" id="msg" role="alert" hidden></div>
+  </div>
+  <div class="controls">
+    <button type="button" id="back">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      設定
+    </button>
+    <button type="button" id="startStop"><span class="ic"></span><span id="ssText">スタート</span></button>
+  </div>
+</section>
+
+<script>
+(() => {
+'use strict';
+
+/* ===== 純粋関数 ===== */
+const LIMITS = { delay: { min: 1, max: 60 } };
+function clampInt(v, min, max) {
+  let n = Math.round(Number(v));
+  if (!Number.isFinite(n)) n = min;
+  return Math.min(max, Math.max(min, n));
+}
+function remainingSec(end, now) {
+  return Math.max(0, Math.ceil((end - now) / 1000));
+}
+function fraction(a, b) {
+  if (!(b > 0) || !Number.isFinite(a)) return 0;
+  return Math.min(1, Math.max(0, a / b));
+}
+// 再生待ちの映像は max 個まで。あふれたら古い方を捨てて、おくれが増えないようにする。
+function trimQueue(queue, max) {
+  while (queue.length > max) queue.shift();
+  return queue;
+}
+function pickMime(isSafari, isSupported) {
+  const webm = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  const mp4 = ['video/mp4;codecs=avc1', 'video/mp4'];
+  const order = isSafari ? mp4.concat(webm) : webm.concat(mp4);
+  for (const m of order) {
+    try { if (isSupported(m)) return m; } catch (e) { /* 無視 */ }
+  }
+  return '';
+}
+window.TimeShiftCam = { clampInt, remainingSec, fraction, trimQueue, pickMime, LIMITS };
+
+/* ===== 要素 ===== */
+const $ = (id) => document.getElementById(id);
+const setup = $('setup'), stage = $('stage');
+const live = $('live'), view = $('view');
+const players = [$('p0'), $('p1')];
+const phaseText = $('phaseText'), countEl = $('count'), prog = $('prog');
+const msgEl = $('msg');
+const ssBtn = $('startStop'), ssText = $('ssText');
+
+/* ===== 設定 ===== */
+const cfg = { delay: 5, facing: 'environment' };
+
+document.querySelectorAll('.stepper').forEach((st) => {
+  const key = st.dataset.key, lim = LIMITS[key];
+  const out = st.querySelector('.v');
+  const minus = st.querySelector('.minus'), plus = st.querySelector('.plus');
+  const render = () => {
+    out.textContent = cfg[key];
+    minus.disabled = cfg[key] <= lim.min;
+    plus.disabled = cfg[key] >= lim.max;
+  };
+  minus.addEventListener('click', () => { cfg[key] = clampInt(cfg[key] - 1, lim.min, lim.max); render(); });
+  plus.addEventListener('click', () => { cfg[key] = clampInt(cfg[key] + 1, lim.min, lim.max); render(); });
+  render();
+});
+
+document.querySelectorAll('.seg').forEach((seg) => {
+  const key = seg.dataset.key;
+  seg.querySelectorAll('button').forEach((b) => {
+    b.addEventListener('click', () => {
+      cfg[key] = b.dataset.v;
+      seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    });
+  });
+});
+
+/* ===== 状態 ===== */
+const isSafari = /^((?!chrome|chromium|crios|fxios|android|edg).)*safari/i.test(navigator.userAgent);
+const mime = window.MediaRecorder && MediaRecorder.isTypeSupported
+  ? pickMime(isSafari, (m) => MediaRecorder.isTypeSupported(m)) : '';
+
+let stream = null;
+let camToken = 0;
+let recorder = null;
+let run = 0;               // スタート／ストップのたびに増やして古い処理を無効化
+let running = false;
+let phase = 'idle', phaseStart = 0, phaseEnd = 0;
+let timers = [];
+let wakeLock = null;
+let msgTimer = 0;
+let queue = [];            // 再生を待っている映像
+let urls = [null, null];   // 各プレイヤーのblob URL
+let activeIdx = -1;        // いま映しているプレイヤー
+let idlePlayer = false;    // 次の映像待ちで止まっている
+
+function setPhase(p, sec) {
+  phase = p;
+  stage.dataset.phase = p;
+  phaseText.textContent = p === 'shift' ? cfg.delay + '秒まえの映像' :
+    p === 'buffering' ? 'じゅんび中' : 'スタートをおしてね';
+  phaseStart = performance.now();
+  phaseEnd = sec != null ? phaseStart + sec * 1000 : 0;
+  tick();
+}
+
+function tick() {
+  const now = performance.now();
+  if (phase === 'buffering' && phaseEnd) {
+    countEl.textContent = remainingSec(phaseEnd, now);
+    prog.style.width = (fraction(now - phaseStart, phaseEnd - phaseStart) * 100) + '%';
+  } else {
+    countEl.textContent = '';
+    prog.style.width = '0%';
+  }
+}
+setInterval(tick, 100);
+
+function later(fn, ms, id) {
+  timers.push(setTimeout(() => { if (id === run) fn(); }, ms));
+}
+function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+
+function showMsg(text, sticky) {
+  msgEl.textContent = text;
+  msgEl.hidden = false;
+  clearTimeout(msgTimer);
+  if (!sticky) msgTimer = setTimeout(() => { msgEl.hidden = true; }, 3000);
+}
+function hideMsg() { clearTimeout(msgTimer); msgEl.hidden = true; }
+
+/* ===== カメラ ===== */
+function closeCamera() {
+  camToken++;
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = null;
+  live.srcObject = null;
+}
+
+async function openCamera() {
+  closeCamera();
+  const token = camToken;
+  if (!window.isSecureContext) { showMsg('カメラを使うには https のページで開いてください。', true); return false; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { showMsg('このブラウザではカメラが使えません。', true); return false; }
+  if (!window.MediaRecorder) { showMsg('このブラウザでは映像をおくらせて流せません。', true); return false; }
+  let s;
+  try {
+    s = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: cfg.facing }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+  } catch (e) {
+    if (token !== camToken) return false;
+    showMsg(e && e.name === 'NotAllowedError'
+      ? 'カメラの使用が許可されていません。ブラウザの設定で許可してください。'
+      : 'カメラを起動できませんでした。', true);
+    return false;
+  }
+  if (token !== camToken || stage.hidden) { s.getTracks().forEach((t) => t.stop()); return false; }
+  stream = s;
+  live.srcObject = s;
+  const p = live.play();
+  if (p && p.catch) p.catch(() => {});
+  view.classList.toggle('mirror', cfg.facing === 'user');
+  hideMsg();
+  return true;
+}
+
+function cameraAlive() {
+  return !!stream && stream.getVideoTracks().some((t) => t.readyState === 'live');
+}
+
+/* ===== 画面をつけたままにする ===== */
+async function requestWakeLock() {
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }
+  catch (e) { wakeLock = null; }
+}
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+/* ===== 映像の後始末（保存しない） ===== */
+function clearPlayer(i) {
+  const v = players[i];
+  v.onended = v.onerror = v.onplaying = null;
+  try { v.pause(); } catch (e) { /* 無視 */ }
+  v.removeAttribute('src');
+  try { v.load(); } catch (e) { /* 無視 */ }
+  if (urls[i]) { URL.revokeObjectURL(urls[i]); urls[i] = null; }
+  v.classList.remove('show');
+}
+
+/* ===== タイムシフト ===== */
+function setRunning(on) {
+  running = on;
+  ssBtn.classList.toggle('running', on);
+  ssText.textContent = on ? 'ストップ' : 'スタート';
+}
+
+async function startShift() {
+  if (!cameraAlive()) {
+    const ok = await openCamera();
+    if (!ok) return;
+  }
+  run++;
+  const id = run;
+  queue = [];
+  activeIdx = -1;
+  idlePlayer = false;
+  setRunning(true);
+  requestWakeLock();
+  setPhase('buffering', cfg.delay);
+  recordSegment(id);
+}
+
+function stopShift() {
+  run++;
+  clearTimers();
+  if (recorder && recorder.state !== 'inactive') {
+    try { recorder.stop(); } catch (e) { /* 無視 */ }
+  }
+  recorder = null;
+  queue = [];
+  clearPlayer(0);
+  clearPlayer(1);
+  activeIdx = -1;
+  idlePlayer = false;
+  setRunning(false);
+  releaseWakeLock();
+  setPhase('idle');
+}
+
+function recordSegment(id) {
+  if (id !== run) return;
+  if (!cameraAlive()) { stopShift(); showMsg('カメラが止まりました。もう一度スタートしてください。'); return; }
+  let rec;
+  try {
+    const opt = { videoBitsPerSecond: 2500000 };
+    if (mime) opt.mimeType = mime;
+    rec = new MediaRecorder(stream, opt);
+  } catch (e) {
+    stopShift();
+    showMsg('この端末では映像をおくらせて流せません。', true);
+    return;
+  }
+  let chunks = [];
+  recorder = rec;
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    if (recorder === rec) recorder = null;
+    const parts = chunks;
+    chunks = [];
+    if (id !== run) return;                       // ストップ済み → 破棄
+    recordSegment(id);                            // すぐ次の録画へ
+    const blob = new Blob(parts, { type: rec.mimeType || mime || 'video/webm' });
+    if (blob.size) enqueue(id, blob);
+  };
+  try {
+    rec.start();
+  } catch (e) {
+    recorder = null;
+    stopShift();
+    showMsg('映像を取り込めませんでした。', true);
+    return;
+  }
+  later(() => { if (rec.state !== 'inactive') rec.stop(); }, cfg.delay * 1000, id);
+}
+
+function enqueue(id, blob) {
+  if (id !== run) return;
+  if (activeIdx === -1 || idlePlayer) { showSegment(id, blob); return; }
+  queue.push(blob);
+  trimQueue(queue, 2);
+}
+
+function showSegment(id, blob) {
+  if (id !== run) return;
+  idlePlayer = false;
+  const idx = activeIdx === 0 ? 1 : 0;
+  clearPlayer(idx);
+  const v = players[idx];
+  urls[idx] = URL.createObjectURL(blob);
+  v.src = urls[idx];
+  const advance = () => {
+    if (id !== run) return;
+    const next = queue.shift();
+    if (next) showSegment(id, next);
+    else idlePlayer = true;                       // 次が届くまで最後の画面のまま
+  };
+  v.onended = advance;
+  v.onerror = () => { if (id !== run) return; showMsg('映像を表示できませんでした。'); advance(); };
+  v.onplaying = () => {
+    if (id !== run) return;
+    players.forEach((p, i) => p.classList.toggle('show', i === idx));
+    activeIdx = idx;
+    if (phase !== 'shift') setPhase('shift');
+  };
+  const p = v.play();
+  if (p && p.catch) p.catch(() => { if (id === run) advance(); });
+}
+
+/* ===== 画面の切りかえ ===== */
+$('done').addEventListener('click', () => {
+  setup.hidden = true;
+  stage.hidden = false;
+  setPhase('idle');
+  openCamera();
+});
+
+$('back').addEventListener('click', () => {
+  stopShift();
+  closeCamera();
+  hideMsg();
+  stage.hidden = true;
+  setup.hidden = false;
+  window.scrollTo(0, 0);
+});
+
+ssBtn.addEventListener('click', () => {
+  if (running) stopShift();
+  else startShift();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (running || phase !== 'idle') stopShift();
+    closeCamera();
+  } else if (!stage.hidden) {
+    openCamera();
+  }
+});
+window.addEventListener('pagehide', () => { stopShift(); closeCamera(); });
+
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+})();
+</script>
+</body>
+</html>
