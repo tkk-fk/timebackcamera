@@ -71,7 +71,20 @@ h1 svg{flex:none;width:1.4em;height:1.4em}
 .view{position:relative;margin:0 10px;border-radius:14px;overflow:hidden;background:#000;min-height:0}
 .view video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 .player{visibility:hidden}
-[data-phase="shift"] #live{visibility:hidden}
+.livewrap{position:absolute;inset:0}
+.pipLabel{display:none}
+[data-phase="shift"] .livewrap:not(.pip){visibility:hidden}
+[data-phase="shift"] .livewrap.pip{
+  inset:auto 12px 14px auto;width:clamp(120px,30%,260px);aspect-ratio:16/9;
+  border-radius:12px;overflow:hidden;z-index:3;
+  box-shadow:0 0 0 3px #fff,0 8px 20px rgba(0,0,0,.45);
+}
+[data-phase="shift"] .livewrap.pip video{object-fit:cover}
+[data-phase="shift"] .livewrap.pip .pipLabel{
+  display:block;position:absolute;left:6px;top:6px;z-index:1;
+  background:rgba(0,0,0,.55);color:#fff;font-size:clamp(12px,2.2vmin,18px);
+  font-weight:700;padding:2px 10px;border-radius:999px;
+}
 [data-phase="shift"] .player.show{visibility:visible}
 .mirror video{transform:scaleX(-1)}
 .progress{position:absolute;left:0;right:0;bottom:0;height:10px;background:rgba(255,255,255,.18)}
@@ -107,6 +120,14 @@ h1 svg{flex:none;width:1.4em;height:1.4em}
     </div>
 
     <div class="row">
+      <span class="label">いまの映像<small>右下に小さく映します</small></span>
+      <div class="seg" data-key="pip" role="group" aria-label="いまの映像">
+        <button type="button" data-v="on" aria-pressed="true">あり</button>
+        <button type="button" data-v="off" aria-pressed="false">なし</button>
+      </div>
+    </div>
+
+    <div class="row">
       <span class="label">カメラ</span>
       <div class="seg" data-key="facing" role="group" aria-label="カメラ">
         <button type="button" data-v="environment" aria-pressed="true">外側</button>
@@ -129,7 +150,10 @@ h1 svg{flex:none;width:1.4em;height:1.4em}
     <span id="count" aria-live="off"></span>
   </div>
   <div class="view" id="view">
-    <video id="live" playsinline muted autoplay></video>
+    <div class="livewrap" id="livewrap">
+      <video id="live" playsinline muted autoplay></video>
+      <span class="pipLabel">いま</span>
+    </div>
     <video id="p0" class="player" playsinline muted preload="auto"></video>
     <video id="p1" class="player" playsinline muted preload="auto"></video>
     <div class="progress"><i id="prog"></i></div>
@@ -181,14 +205,14 @@ window.TimeShiftCam = { clampInt, remainingSec, fraction, trimQueue, pickMime, L
 /* ===== 要素 ===== */
 const $ = (id) => document.getElementById(id);
 const setup = $('setup'), stage = $('stage');
-const live = $('live'), view = $('view');
+const live = $('live'), view = $('view'), livewrap = $('livewrap');
 const players = [$('p0'), $('p1')];
 const phaseText = $('phaseText'), countEl = $('count'), prog = $('prog');
 const msgEl = $('msg');
 const ssBtn = $('startStop'), ssText = $('ssText');
 
 /* ===== 設定 ===== */
-const cfg = { delay: 5, facing: 'environment' };
+const cfg = { delay: 5, pip: 'on', facing: 'environment' };
 
 document.querySelectorAll('.stepper').forEach((st) => {
   const key = st.dataset.key, lim = LIMITS[key];
@@ -302,6 +326,7 @@ async function openCamera() {
   const p = live.play();
   if (p && p.catch) p.catch(() => {});
   view.classList.toggle('mirror', cfg.facing === 'user');
+  livewrap.classList.toggle('pip', cfg.pip === 'on');
   hideMsg();
   return true;
 }
@@ -456,6 +481,7 @@ function showSegment(id, blob) {
 $('done').addEventListener('click', () => {
   setup.hidden = true;
   stage.hidden = false;
+  livewrap.classList.toggle('pip', cfg.pip === 'on');
   setPhase('idle');
   openCamera();
 });
